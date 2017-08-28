@@ -1,0 +1,85 @@
+package internal
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type ScanResult struct {
+	EsError
+	ScrollID string `json:"_scroll_id"`
+	Token    int    `json:"took"`
+	TimedOut bool   `json:"timed_out"`
+	Hits     struct {
+		Total uint64 `json:"total"`
+	}
+}
+
+func (sr *ScanResult) String() string {
+	bf, _ := json.MarshalIndent(sr, " ", "  ")
+	return string(bf)
+}
+
+type ScrollResult struct {
+	EsError
+	ScrollID string `json:"_scroll_id"`
+	Token    int    `json:"took"`
+	TimedOut bool   `json:"timed_out"`
+	Hits     *struct {
+		Total uint64      `json:"total"`
+		Hits  []*DataItem `json:"hits"`
+	} `json:"hits"`
+}
+
+func (srt *ScrollResult) HasMore() bool {
+	return srt.Hits != nil && len(srt.Hits.Hits) > 0
+}
+
+func (c *ScrollResult) String() string {
+	bf, _ := json.MarshalIndent(c, " ", "  ")
+	return string(bf)
+}
+
+type DataItem struct {
+	Index  string                 `json:"_index"`
+	Type   string                 `json:"_type"`
+	ID     string                 `json:"_id"`
+	Source map[string]interface{} `json:"_source"`
+}
+
+func (item *DataItem) String() string {
+	header := map[string]interface{}{
+		"index": map[string]string{
+			"_index": item.Index,
+			"_type":  item.Type,
+			"_id":    item.ID,
+		},
+	}
+	hd, _ := json.Marshal(header)
+	bd, _ := json.Marshal(item.Source)
+	return string(hd) + "\n" + string(bd) + "\n"
+}
+
+func (item *DataItem) UniqID() string {
+	return fmt.Sprintf("%s|%s|%s", item.Index, item.Type, item.ID)
+}
+
+type BulkResult struct {
+	Took   uint64                       `json:"took"`
+	Errors bool                         `json:"errors"`
+	Items  []map[string]*BulkResultItem `json:"items"`
+}
+
+type BulkResultItem struct {
+	Index   string `json:"_index"`
+	Type    string `json:"_type"`
+	Id      string `json:"_id"`
+	Version uint64 `json:"_version"`
+	Status  int    `json:"status"`
+	Error   string `json:"error"`
+}
+
+func (bri *BulkResultItem) UniqID() string {
+	return fmt.Sprintf("%s|%s|%s", bri.Index, bri.Type, bri.Id)
+
+}
