@@ -1,0 +1,18 @@
+{
+    "origin_index":{
+        "host":{
+            "addr":"http://127.0.0.1:9200",
+            "header":{},
+            "user":"",
+            "password":""
+        },
+        "type":{
+            "index":"test",
+            "type":"type1"
+        }
+    },
+    "scan_query":{
+        "size":100
+    },
+    "scan_time":"180s"
+}

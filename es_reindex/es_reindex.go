@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
+	"path"
 )
 
 type IndexInfo struct {
@@ -28,6 +30,7 @@ type Config struct {
 	ScanQuery     *internal.Query        `json:"scan_query"`
 	ScanTime      string                 `json:"scan_time"`
 	FieldsDefault map[string]interface{} `json:"fields_default"`
+	DataFixCmd    string              `json:"data_fix_cmd"`
 	sameIndex     bool                   `json:"-"`
 }
 
@@ -57,6 +60,9 @@ func readConf(conf_name string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	os.Chdir(path.Dir(conf_name))
+	
 	var conf *Config
 	dec := json.NewDecoder(bytes.NewReader(bs))
 	dec.UseNumber()
@@ -82,9 +88,14 @@ func readConf(conf_name string) (*Config, error) {
 
 	err = conf.NewIndex.Host.Init()
 	checkErr("parse new index", err)
-
+	
+	
 	if conf.OriginIndex.DocType.Index == "" {
 		return nil, fmt.Errorf("origin_index.type.index is empty")
+	}
+	
+	if conf.NewIndex.DocType == nil{
+		conf.NewIndex.DocType = &internal.DocType{}
 	}
 
 	if conf.NewIndex.DocType.Type != "" && conf.OriginIndex.DocType.Type == "" {
@@ -98,7 +109,8 @@ func readConf(conf_name string) (*Config, error) {
 	if conf.FieldsDefault == nil {
 		conf.FieldsDefault = make(map[string]interface{})
 	}
-
+	conf.DataFixCmd=strings.TrimSpace(conf.DataFixCmd)
+	
 	conf.sameIndex = conf.OriginIndex.IndexUri() == conf.NewIndex.IndexUri()
 
 	return conf, nil
@@ -120,10 +132,20 @@ func reIndex(conf *Config) {
 	for i := 0; i < *bulk_worker; i++ {
 		wg.Add(1)
 		go func(id int) {
+			var fixer *internal.SubProcess
+			if conf.DataFixCmd!=""{
+				var _err error
+				fixer,_err=internal.NewSubProcess(conf.DataFixCmd,fmt.Sprintf("%d", id))
+				checkErr("create SubProcess faild", _err)
+			}
 			for job := range scrollResultChan {
-				reBulk(conf, job)
+				reBulk(conf, job,fixer)
 			}
 			wg.Done()
+			
+			if fixer!=nil{
+				fixer.Close()
+			}
 		}(i)
 	}
 
@@ -146,7 +168,7 @@ func reIndex(conf *Config) {
 	log.Println("stop re_index")
 }
 
-func reBulk(conf *Config, scrollResult *internal.ScrollResult) {
+func reBulk(conf *Config, scrollResult *internal.ScrollResult,fixer *internal.SubProcess) {
 	if *isDebug {
 		fmt.Println("rebulk", scrollResult.String())
 	}
@@ -170,6 +192,41 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult) {
 				_hasChange = true
 			}
 		}
+		
+		if fixer!=nil{
+			_itemRawStr:=item.JsonString()
+			var _res string
+			var _err error
+			_try:=0
+			
+			for{
+				_try++
+				_res,_err=fixer.Deal(_itemRawStr)
+				if(_err!=nil){
+					log.Println("fixer_deal with error:",_err,"try_times=",_try,"input=",_itemRawStr)
+					time.Sleep(1*time.Second)
+					continue
+				}
+				if _res ==""{
+					break
+				}
+				_hasChange = _itemRawStr != _res
+				
+				newItem,_err:=internal.NewDataItem(_res)
+				if(_err!=nil){
+					log.Println("fixer_data with error:",_err,"try_times=",_try,"input=",_itemRawStr)
+					time.Sleep(1*time.Second)
+					continue
+				}
+				item = newItem
+				break
+			}
+			
+			if _res==""{
+				log.Println("skip with empty resp:",item.UniqID())
+				continue
+			}
+		}
 
 		if !conf.sameIndex || _hasChange {
 			str := item.String()
@@ -184,7 +241,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult) {
 	}
 
 	var brt internal.BulkResult
-
+	
 	err := conf.NewIndex.Host.BulkStream(strings.NewReader(strings.Join(datas, "\n")), &brt)
 	checkErr("parse bulk resp failed:", err)
 
@@ -203,10 +260,10 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult) {
 			_id := item.UniqID()
 			_raw, _ := datas_map[_id]
 			if item.Error != "" {
-				log.Println("err,", _id, item.Error, "raw:", strings.TrimSpace(_raw))
+				log.Println("bulk_err,", _id, item.Error, "raw:", strings.TrimSpace(_raw))
 
 			} else {
-				log.Println("suc,", _id, item.Status)
+				log.Println("bulk_suc,", _id, item.Status)
 
 			}
 		}

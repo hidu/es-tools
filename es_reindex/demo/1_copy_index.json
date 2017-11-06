@@ -1,0 +1,29 @@
+{
+    "origin_index":{
+        "host":{
+            "addr":"http://127.0.0.1:8666/",
+            "header":{},
+            "user":"",
+            "password":""
+        },
+        "type":{
+            "index":"mbd_relation_forb"
+        }
+    },
+     "new_index":{
+        "host":{
+            "addr":"http://127.0.0.1:8666/",
+            "header":{},
+            "user":"",
+            "password":""
+        },
+        "type":{
+            "index":"test1"
+        }
+    },
+    "scan_query":{
+        "size":100
+    },
+    "scan_time":"180s",
+    "data_fix_cmd":"php 1_data_fix.php"
+}

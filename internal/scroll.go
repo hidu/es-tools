@@ -32,6 +32,7 @@ func (s *Scroll) scrollTime() string {
 }
 
 func (s *Scroll) Next() (*ScrollResult, error) {
+	
 	if s.scroll_id == "" {
 		for {
 			sr, err := s.scan()
@@ -72,9 +73,13 @@ func (s *Scroll) Next() (*ScrollResult, error) {
 		break
 	}
 	if srt.IsError() {
+		s.host.speed.Fail("scroll_next", 1)
 		return nil, srt.Error()
 	}
 	s.scroll_id = srt.ScrollID
+	
+	s.host.speed.Success("scroll_next", 1)
+	s.host.speed.Success("scroll_result_items", len(srt.Hits.Hits))
 	return srt, nil
 }
 

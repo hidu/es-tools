@@ -40,6 +40,25 @@ func (c *ScrollResult) String() string {
 	return string(bf)
 }
 
+
+func NewDataItem(str string) (*DataItem,error){
+	var item *DataItem
+	err:=json.Unmarshal([]byte(str), &item)
+	
+	if err!=nil{
+		return nil,err
+	}
+	if item.Index == "" || item.Type == "" || item.ID == ""{
+		return nil,fmt.Errorf("_index,_type,_id is empty,input=%s",str)
+	}
+	
+	if item.Source == nil{
+		return nil,fmt.Errorf("_source is empty,input=%s",str)
+	}
+	
+	return item,err
+}
+
 type DataItem struct {
 	Index  string                 `json:"_index"`
 	Type   string                 `json:"_type"`
@@ -58,6 +77,11 @@ func (item *DataItem) String() string {
 	hd, _ := json.Marshal(header)
 	bd, _ := json.Marshal(item.Source)
 	return string(hd) + "\n" + string(bd) + "\n"
+}
+
+func (item *DataItem) JsonString()string{
+	s, _ := json.Marshal(item)
+	return string(s)
 }
 
 func (item *DataItem) UniqID() string {
