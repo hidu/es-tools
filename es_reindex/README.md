@@ -15,7 +15,7 @@ go get -u github.com/hidu/es-tools/es_reindex
 
 
 `test.json` 配置文件
-```
+```json
 {
     "origin_index":{
         "host":{
