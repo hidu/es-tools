@@ -22,9 +22,9 @@ func (i *IndexInfo) IndexUri() string {
 }
 
 type Config struct {
-	OriginIndex   *IndexInfo             `json:"origin_index"`
-	ScanQuery     *internal.Query        `json:"scan_query"`
-	ScanTime      string                 `json:"scan_time"`
+	OriginIndex *IndexInfo      `json:"origin_index"`
+	ScanQuery   *internal.Query `json:"scan_query"`
+	ScanTime    string          `json:"scan_time"`
 }
 
 func (c *Config) String() string {
@@ -36,27 +36,27 @@ var conf_name = flag.String("conf", "es_dump.json", "config file name")
 
 func main() {
 	flag.Parse()
-	
+
 	conf, err := readConf(*conf_name)
 	if err != nil {
 		fmt.Println("parser config failed:", err)
 		os.Exit(2)
 	}
-	
+
 	scrollResultChan := make(chan *internal.ScrollResult, 10)
-	
+
 	var wg sync.WaitGroup
 
-//	for i := 0; i < *bulk_worker; i++ {
-		wg.Add(1)
-		go func() {
-			for job := range scrollResultChan {
-				dumpToFile(conf, job)
-			}
-			wg.Done()
-		}()
-//	}
-	
+	//	for i := 0; i < *bulk_worker; i++ {
+	wg.Add(1)
+	go func() {
+		for job := range scrollResultChan {
+			dumpToFile(conf, job)
+		}
+		wg.Done()
+	}()
+	//	}
+
 	scroll := internal.NewScroll(conf.OriginIndex.Host, conf.OriginIndex.DocType, conf.ScanQuery)
 	for {
 		sr, err := scroll.Next()
@@ -93,10 +93,10 @@ func readConf(conf_name string) (*Config, error) {
 
 	err = conf.OriginIndex.Host.Init()
 	checkErr("parse origin index", err)
-		if conf.ScanQuery == nil {
+	if conf.ScanQuery == nil {
 		conf.ScanQuery = internal.NewQuery()
 	}
-		return conf,nil
+	return conf, nil
 }
 
 func checkErr(msg string, err error) {
@@ -105,9 +105,8 @@ func checkErr(msg string, err error) {
 	}
 }
 
-func dumpToFile(conf *Config, scrollResult *internal.ScrollResult){
+func dumpToFile(conf *Config, scrollResult *internal.ScrollResult) {
 	for _, item := range scrollResult.Hits.Hits {
 		fmt.Println(item)
 	}
 }
-

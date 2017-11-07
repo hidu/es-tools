@@ -137,8 +137,8 @@ func (h *Host) DoRequest(method string, uri string, playload string, result inte
 }
 
 func (h *Host) BulkStream(stream io.Reader, result *BulkResult) error {
-	err:= h.DoRequestStream("POST", "/_bulk", stream, &result)
-	if err==nil{
+	err := h.DoRequestStream("POST", "/_bulk", stream, &result)
+	if err == nil {
 		h.speed.Success("bulk_items", len(result.Items))
 	}
 	return err

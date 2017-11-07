@@ -40,23 +40,22 @@ func (c *ScrollResult) String() string {
 	return string(bf)
 }
 
-
-func NewDataItem(str string) (*DataItem,error){
+func NewDataItem(str string) (*DataItem, error) {
 	var item *DataItem
-	err:=json.Unmarshal([]byte(str), &item)
-	
-	if err!=nil{
-		return nil,err
+	err := json.Unmarshal([]byte(str), &item)
+
+	if err != nil {
+		return nil, err
 	}
-	if item.Index == "" || item.Type == "" || item.ID == ""{
-		return nil,fmt.Errorf("_index,_type,_id is empty,input=%s",str)
+	if item.Index == "" || item.Type == "" || item.ID == "" {
+		return nil, fmt.Errorf("_index,_type,_id is empty,input=%s", str)
 	}
-	
-	if item.Source == nil{
-		return nil,fmt.Errorf("_source is empty,input=%s",str)
+
+	if item.Source == nil {
+		return nil, fmt.Errorf("_source is empty,input=%s", str)
 	}
-	
-	return item,err
+
+	return item, err
 }
 
 type DataItem struct {
@@ -79,7 +78,7 @@ func (item *DataItem) String() string {
 	return string(hd) + "\n" + string(bd) + "\n"
 }
 
-func (item *DataItem) JsonString()string{
+func (item *DataItem) JsonString() string {
 	s, _ := json.Marshal(item)
 	return string(s)
 }
