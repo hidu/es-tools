@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type ScanResult struct {
@@ -42,7 +43,10 @@ func (c *ScrollResult) String() string {
 
 func NewDataItem(str string) (*DataItem, error) {
 	var item *DataItem
-	err := json.Unmarshal([]byte(str), &item)
+	dec := json.NewDecoder(strings.NewReader(str))
+	dec.UseNumber()
+	err := dec.Decode(&item)
+	//	err := json.Unmarshal([]byte(str), &item)
 
 	if err != nil {
 		return nil, err

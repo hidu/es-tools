@@ -222,9 +222,14 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 
 				newItem, _err := internal.NewDataItem(_res)
 				if _err != nil {
-					log.Println("fixer_data with error:", _err, "try_times=", _try, "input=", _itemRawStr)
+					log.Println("fixer_data with error:", _err, "try_times=", _try, "raw=", _itemRawStr, "new_str=", _res)
 					time.Sleep(1 * time.Second)
 					continue
+				}
+				if *isDebug {
+					fmt.Println("fixer >>>" + strings.Repeat("=", 70))
+					fmt.Println("raw:", _itemRawStr)
+					fmt.Println("new:", _res)
 				}
 				item = newItem
 				break
