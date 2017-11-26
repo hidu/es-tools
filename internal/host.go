@@ -9,11 +9,13 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	//	"reflect"
 	"strconv"
 	"strings"
 )
 
 type Version struct {
+	EsResp
 	Name        string                 `json:"name"`
 	ClusterName string                 `json:"cluster_name"`
 	ClusterUUID string                 `json:"cluster_uuid"`
@@ -102,11 +104,10 @@ func (h *Host) Init() error {
 	if !h.Vs.Gt("1.0.0") {
 		err = fmt.Errorf("wrong version < 1.0.0")
 	}
-
 	return err
 }
 
-func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, result interface{}) error {
+func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, result EsResult) error {
 	h.Init()
 
 	urlStr := fmt.Sprintf("%s%s", h.AddressUrl, uri)
@@ -130,9 +131,21 @@ func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, re
 	if err != nil {
 		return err
 	}
-	return jsonDecode(bd, &result)
+
+	e := jsonDecode(bd, &result)
+
+	//	if result != nil {
+	//		raw:=reflect.ValueOf(result).Elem()
+	//		fmt.Println(raw.Type())
+	//		f0:=raw.FieldByName("Raw")
+	//		if f0.IsValid(){
+	//			f0.SetString(string(bd))
+	//		}
+	//	}
+
+	return e
 }
-func (h *Host) DoRequest(method string, uri string, playload string, result interface{}) error {
+func (h *Host) DoRequest(method string, uri string, playload string, result EsResult) error {
 	return h.DoRequestStream(method, uri, strings.NewReader(playload), &result)
 }
 

@@ -6,12 +6,14 @@ import (
 	"flag"
 	"fmt"
 	"github.com/hidu/es-tools/internal"
+	"github.com/hidu/goutils/time_util"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,7 +22,7 @@ func init() {
 	flag.Usage = func() {
 		ua()
 		fmt.Println("\n site: https://github.com/hidu/es-tools/")
-		fmt.Println(" version:", "20171107 1.0")
+		fmt.Println(" version:", "20171126 1.1")
 	}
 }
 
@@ -48,10 +50,40 @@ func (c *Config) String() string {
 	return string(bf)
 }
 
+type CounterType struct {
+	start      time.Time
+	total      uint64 //scroll 的总数
+	read       uint64 //当前已读总数
+	write_skip uint64
+	write_bulk uint64
+	bulk_c     uint64
+}
+
+func (c *CounterType) String() string {
+	return fmt.Sprintf("counter[read=%d/%d skip=%d bulk_no=%d bulk_total=%d]", c.read, c.total, c.write_skip, c.bulk_c, c.write_bulk)
+}
+func (c *CounterType) Printlog() {
+	if c.total > 0 {
+		finish_rate := float64(c.read) / float64(c.total)
+		used := time.Now().Sub(c.start)
+		need := float64(c.total-c.read) / (float64(c.read) / used.Seconds())
+
+		f_time := time.Now().Add(time.Duration(need) * time.Second)
+
+		log.Printf("%s rate=%.2f%% need=%.1fs finish_time=%s", c, 100*finish_rate, need, f_time.Format("2006-01-02 15:04:05"))
+	} else {
+		log.Println(c)
+	}
+}
+
 var conf_name = flag.String("conf", "es_reindex.json", "reindex config file name")
 var loop_sleep = flag.Int64("loop_sleep", 0, "each loop sleep time")
 var bulk_worker = flag.Int("bulk_worker", 3, "bulk worker num")
 var isDebug = flag.Bool("debug", false, "debug and print")
+
+var counter = &CounterType{
+	start: time.Now(),
+}
 
 func main() {
 	flag.Parse()
@@ -118,6 +150,10 @@ func readConf(conf_name string) (*Config, error) {
 		conf.FieldsDefault = make(map[string]interface{})
 	}
 	conf.DataFixCmd = strings.TrimSpace(conf.DataFixCmd)
+	if strings.HasPrefix(conf.DataFixCmd, "#") {
+		log.Println("ignore data fix cmd:", conf.DataFixCmd)
+		conf.DataFixCmd = ""
+	}
 
 	conf.sameIndex = conf.OriginIndex.IndexUri() == conf.NewIndex.IndexUri()
 
@@ -126,12 +162,12 @@ func readConf(conf_name string) (*Config, error) {
 
 func checkErr(msg string, err error) {
 	if err != nil {
-		log.Fatalln(msg, err)
+		log.Fatalln(msg, err, counter.String())
 	}
 }
 
 func reIndex(conf *Config) {
-	log.Println("start re_index")
+	log.Println("[info] start re_index")
 	scroll := internal.NewScroll(conf.OriginIndex.Host, conf.OriginIndex.DocType, conf.ScanQuery)
 
 	scrollResultChan := make(chan *internal.ScrollResult, *bulk_worker*2)
@@ -140,6 +176,8 @@ func reIndex(conf *Config) {
 	for i := 0; i < *bulk_worker; i++ {
 		wg.Add(1)
 		go func(id int) {
+			log.Println("[info] bulk_worker_start id=[%d]", id)
+
 			var fixer *internal.SubProcess
 			if conf.DataFixCmd != "" {
 				var _err error
@@ -154,14 +192,23 @@ func reIndex(conf *Config) {
 			if fixer != nil {
 				fixer.Close()
 			}
+			log.Println("[info] bulk_worker_finish id=[%d]", id)
 		}(i)
 	}
 
-	log.Println("started re_bulk worker,n=", *bulk_worker)
+	time_util.SetInterval(counter.Printlog, 5)
+
+	log.Println("[info] started re_bulk worker,n=", *bulk_worker)
 
 	for {
 		sr, err := scroll.Next()
 		checkErr("scroll_next", err)
+
+		if counter.total == 0 {
+			counter.total = scroll.Total()
+		}
+
+		counter.read += uint64(len(sr.Hits.Hits))
 
 		scrollResultChan <- sr
 		if !sr.HasMore() {
@@ -173,7 +220,7 @@ func reIndex(conf *Config) {
 
 	wg.Wait()
 
-	log.Println("stop re_index")
+	log.Println("[info] bulk_worker all finished,stop re_index", counter.String())
 }
 
 func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.SubProcess) {
@@ -211,7 +258,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 				_try++
 				_res, _err = fixer.Deal(_itemRawStr)
 				if _err != nil {
-					log.Println("fixer_deal with error:", _err, "try_times=", _try, "input=", _itemRawStr)
+					log.Println("[err] fixer_deal with error:", _err, "try_times=", _try, "input=", _itemRawStr)
 					time.Sleep(1 * time.Second)
 					continue
 				}
@@ -222,7 +269,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 
 				newItem, _err := internal.NewDataItem(_res)
 				if _err != nil {
-					log.Println("fixer_data with error:", _err, "try_times=", _try, "raw=", _itemRawStr, "new_str=", _res)
+					log.Println("[err] fixer_data with error:", _err, "try_times=", _try, "raw=", _itemRawStr, "new_str=", _res)
 					time.Sleep(1 * time.Second)
 					continue
 				}
@@ -236,7 +283,8 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 			}
 
 			if _res == "" {
-				log.Println("skip with empty resp:", item.UniqID())
+				atomic.AddUint64(&counter.write_skip, 1)
+				log.Println("[info] skip with empty resp:", item.UniqID())
 				continue
 			}
 		}
@@ -245,11 +293,15 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 			str := item.String()
 			datas_map[item.UniqID()] = str
 			datas = append(datas, str)
+
+			atomic.AddUint64(&counter.write_bulk, 1)
+		} else {
+			atomic.AddUint64(&counter.write_skip, 1)
 		}
 	}
 
 	if len(datas) < 1 {
-		log.Println("not change,skip reindex")
+		log.Println("[info] not change,skip reindex")
 		return
 	}
 
@@ -261,22 +313,22 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 	//	log.Println("bulk resp:", string(body))
 
 	if brt.Errors {
-		log.Println("buil resp has error")
+		log.Println("[err] bulk resp has error")
 	} else {
-		log.Println("buil all success")
+		log.Println("[info] bulk all success")
 	}
 
 	//	t,_:=json.Marshal(br)
 	//	fmt.Println("br",string(t))
 	for _, data := range brt.Items {
+		atomic.AddUint64(&counter.bulk_c, 1)
 		if item, has := data["index"]; has {
 			_id := item.UniqID()
 			_raw, _ := datas_map[_id]
 			if item.Error != "" {
-				log.Println("bulk_err,", _id, item.Error, "raw:", strings.TrimSpace(_raw))
-
+				log.Printf("[err] bulk_err id=%s err=%s input=%s", _id, item.Error, strings.TrimSpace(_raw))
 			} else {
-				log.Println("bulk_suc,", _id, item.Status)
+				log.Printf("[info] bulk_suc id=%s s=%d", _id, item.Status)
 
 			}
 		}

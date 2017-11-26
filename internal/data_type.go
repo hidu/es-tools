@@ -7,7 +7,7 @@ import (
 )
 
 type ScanResult struct {
-	EsError
+	EsResp
 	ScrollID string `json:"_scroll_id"`
 	Token    int    `json:"took"`
 	TimedOut bool   `json:"timed_out"`
@@ -22,7 +22,7 @@ func (sr *ScanResult) String() string {
 }
 
 type ScrollResult struct {
-	EsError
+	EsResp
 	ScrollID string `json:"_scroll_id"`
 	Token    int    `json:"took"`
 	TimedOut bool   `json:"timed_out"`
@@ -92,6 +92,7 @@ func (item *DataItem) UniqID() string {
 }
 
 type BulkResult struct {
+	EsResp
 	Took   uint64                       `json:"took"`
 	Errors bool                         `json:"errors"`
 	Items  []map[string]*BulkResultItem `json:"items"`
@@ -108,5 +109,9 @@ type BulkResultItem struct {
 
 func (bri *BulkResultItem) UniqID() string {
 	return fmt.Sprintf("%s|%s|%s", bri.Index, bri.Type, bri.Id)
+}
 
+func (bri *BulkResult) JsonString() string {
+	bs, _ := json.Marshal(bri)
+	return string(bs)
 }
