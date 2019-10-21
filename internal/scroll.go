@@ -35,10 +35,14 @@ func (s *Scroll) scrollTime() string {
 }
 
 func (s *Scroll) Next() (*ScrollResult, error) {
+	var srt *ScrollResult
+	var err error
 
-	if s.scroll_id == "" {
+	s.loop_no++
+
+	if s.scroll_id == "" { // 首次扫描或scroll_id为空的情况
 		for {
-			sr, err := s.scan()
+			srt, err = s.scan()
 
 			for i := 0; i < 3; i++ {
 				if err != nil {
@@ -50,35 +54,31 @@ func (s *Scroll) Next() (*ScrollResult, error) {
 				return nil, err
 			}
 
-			if sr != nil {
-				if sr.IsError() {
-					return nil, sr.Error()
+			if srt != nil {
+				if srt.IsError() {
+					return nil, srt.Error()
 				}
-				s.scroll_id = sr.ScrollID
-				s.total = sr.Hits.Total
+				s.scroll_id = srt.ScrollID
+				s.total = srt.Hits.Total
 				break
 			}
 		}
+	} else { // 非首次扫描或指定scroll_id
+		scanPost := `{"scroll": "10m","scroll_id": "` + s.scroll_id + `"}`
 
+		for i := 0; i < 20; i++ {
+			err = s.host.DoRequest("GET", "/_search/scroll", scanPost, &srt)
+			if err != nil {
+				log.Printf("[err] search_scroll failed,try=%d/20,error=%s\n", i, err.Error())
+				time.Sleep(time.Second)
+				continue
+			}
+			break
+		}
 	}
-	s.loop_no++
 
 	if s.scroll_id == "" {
 		return nil, fmt.Errorf("get scroll_id failed")
-	}
-
-	scanUri := "/_search/scroll?scroll=" + s.scrollTime()
-
-	var srt *ScrollResult
-
-	for i := 0; i < 100; i++ {
-		err := s.host.DoRequest("GET", scanUri, s.scroll_id, &srt)
-		if err != nil {
-			log.Printf("[err] search_scroll failed,try=%d/100,error=%s\n", i, err.Error())
-			time.Sleep(time.Second)
-			continue
-		}
-		break
 	}
 
 	if srt.IsError() {

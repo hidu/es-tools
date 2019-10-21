@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/hidu/es-tools/internal"
-	"github.com/hidu/goutils/time_util"
 	"io/ioutil"
 	"log"
 	"os"
@@ -15,6 +13,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/hidu/es-tools/internal"
+	"github.com/hidu/goutils/time_util"
 )
 
 func init() {
@@ -176,7 +177,7 @@ func reIndex(conf *Config) {
 	for i := 0; i < *bulk_worker; i++ {
 		wg.Add(1)
 		go func(id int) {
-			log.Println("[info] bulk_worker_start id=[%d]", id)
+			log.Printf("[info] bulk_worker_start id=[%d]", id)
 
 			var fixer *internal.SubProcess
 			if conf.DataFixCmd != "" {
@@ -192,7 +193,7 @@ func reIndex(conf *Config) {
 			if fixer != nil {
 				fixer.Close()
 			}
-			log.Println("[info] bulk_worker_finish id=[%d]", id)
+			log.Printf("[info] bulk_worker_finish id=[%d]", id)
 		}(i)
 	}
 
@@ -310,8 +311,6 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 	err := conf.NewIndex.Host.BulkStream(strings.NewReader(strings.Join(datas, "\n")), &brt)
 	checkErr("parse bulk resp failed:", err)
 
-	//	log.Println("bulk resp:", string(body))
-
 	if brt.Errors {
 		log.Println("[err] bulk resp has error")
 	} else {
@@ -329,7 +328,6 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 				log.Printf("[err] bulk_err id=%s err=%s input=%s", _id, item.Error, strings.TrimSpace(_raw))
 			} else {
 				log.Printf("[info] bulk_suc id=%s s=%d", _id, item.Status)
-
 			}
 		}
 	}

@@ -6,21 +6,6 @@ import (
 	"strings"
 )
 
-type ScanResult struct {
-	EsResp
-	ScrollID string `json:"_scroll_id"`
-	Token    int    `json:"took"`
-	TimedOut bool   `json:"timed_out"`
-	Hits     struct {
-		Total uint64 `json:"total"`
-	}
-}
-
-func (sr *ScanResult) String() string {
-	bf, _ := json.MarshalIndent(sr, " ", "  ")
-	return string(bf)
-}
-
 type ScrollResult struct {
 	EsResp
 	ScrollID string `json:"_scroll_id"`
@@ -31,6 +16,8 @@ type ScrollResult struct {
 		Hits  []*DataItem `json:"hits"`
 	} `json:"hits"`
 }
+
+type ScanResult = ScrollResult
 
 func (srt *ScrollResult) HasMore() bool {
 	return srt.Hits != nil && len(srt.Hits.Hits) > 0
