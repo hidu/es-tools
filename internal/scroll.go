@@ -1,22 +1,25 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 )
 
+// Scroll es scroll 操作
 type Scroll struct {
-	host       *Host
-	doc        *DocType
-	query      *Query
-	scroll_id  string
-	second     int
-	loop_no    uint64
-	total      uint64
-	scroll_pos uint64
+	host      *Host
+	doc       *DocType
+	query     *Query
+	scrollID  string
+	second    int
+	loopNo    uint64
+	total     uint64
+	scrollPos uint64
 }
 
+// NewScroll 创建一个scroll命令
 func NewScroll(host *Host, doc *DocType, query *Query) *Scroll {
 	return &Scroll{
 		host:   host,
@@ -34,9 +37,10 @@ func (s *Scroll) scrollTime() string {
 	return fmt.Sprintf("%ds", s.second)
 }
 
-func (s *Scroll) Next() (*ScrollResult, error) {
+// Next 获取下一页数据
+func (s *Scroll) Next() (*ScrollResponse, error) {
 
-	if s.scroll_id == "" {
+	if s.scrollID == "" {
 		for {
 			sr, err := s.scan()
 
@@ -54,25 +58,31 @@ func (s *Scroll) Next() (*ScrollResult, error) {
 				if sr.IsError() {
 					return nil, sr.Error()
 				}
-				s.scroll_id = sr.ScrollID
+				s.scrollID = sr.ScrollID
 				s.total = sr.Hits.Total
 				break
 			}
 		}
 
 	}
-	s.loop_no++
+	s.loopNo++
 
-	if s.scroll_id == "" {
+	if s.scrollID == "" {
 		return nil, fmt.Errorf("get scroll_id failed")
 	}
 
-	scanUri := "/_search/scroll?scroll=" + s.scrollTime()
+	scanURI := "/_search/scroll?scroll=" + s.scrollTime()
 
-	var srt *ScrollResult
+	var srt *ScrollResponse
 
 	for i := 0; i < 100; i++ {
-		err := s.host.DoRequest("GET", scanUri, s.scroll_id, &srt)
+		postData := map[string]string{
+			"scroll":    s.scrollTime(),
+			"scroll_id": s.scrollID,
+		}
+
+		bf, _ := json.Marshal(postData)
+		err := s.host.DoRequest("GET", scanURI, string(bf), &srt)
 		if err != nil {
 			log.Printf("[err] search_scroll failed,try=%d/100,error=%s\n", i, err.Error())
 			time.Sleep(time.Second)
@@ -86,32 +96,33 @@ func (s *Scroll) Next() (*ScrollResult, error) {
 		return nil, srt.Error()
 	}
 
-	s.scroll_pos += uint64(len(srt.Hits.Hits))
+	s.scrollPos += uint64(len(srt.Hits.Hits))
 
-	s.scroll_id = srt.ScrollID
+	s.scrollID = srt.ScrollID
 
 	s.host.speed.Success("scroll_next", 1)
 	s.host.speed.Success("scroll_result_items", len(srt.Hits.Hits))
 
-	log.Printf("[info] scroll_next result,loop_no=%d,total=%d,scroll_pos=%d\n", s.loop_no, s.total, s.scroll_pos)
+	log.Printf("[info] scroll_next result,loopNo=%d,total=%d,scrollPos=%d\n", s.loopNo, s.total, s.scrollPos)
 
 	return srt, nil
 }
 
 // https://www.elastic.co/guide/en/elasticsearch/reference/5.4/breaking_50_search_changes.html#_literal_search_type_scan_literal_removed
 
-func (s *Scroll) scan() (*ScanResult, error) {
-	uri := s.doc.Uri() + "/_search?scroll=" + s.scrollTime()
+func (s *Scroll) scan() (*ScanResponse, error) {
+	uri := s.doc.URI() + "/_search?scroll=" + s.scrollTime()
 	if !s.host.Vs.Gt("5.0.0") {
 		uri += "&search_type=scan"
 	}
-	var sr *ScanResult
+	var sr *ScanResponse
 	qs := s.query.String()
 	err := s.host.DoRequest("GET", uri, qs, &sr)
 	log.Println("[info] scan,error=", err, ",result=", sr, ",uri=", uri, ",query=", qs)
 	return sr, err
 }
 
+// Total 匹配的数据总条数
 func (s *Scroll) Total() uint64 {
 	return s.total
 }

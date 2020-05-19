@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"fmt"
+	"strings"
 )
 
 type DocType struct {
@@ -9,9 +9,17 @@ type DocType struct {
 	Type  string `json:"type"`
 }
 
-func (d *DocType) Uri() string {
+func (d *DocType) URI() string {
 	if d.Type == "" {
-		return fmt.Sprintf("/%s", d.Index)
+		return strings.Join([]string{
+			"/",
+			d.Index,
+		}, "")
 	}
-	return fmt.Sprintf("/%s/%s", d.Index, d.Type)
+	return strings.Join([]string{
+		"/",
+		d.Index,
+		"/",
+		d.Type,
+	}, "")
 }

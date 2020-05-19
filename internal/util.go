@@ -9,7 +9,7 @@ import (
 func jsonDecode(bs []byte, ret interface{}) error {
 	dec := json.NewDecoder(bytes.NewReader(bs))
 	dec.UseNumber()
-	err := dec.Decode(&ret)
+	err := dec.Decode(ret)
 	if err == nil {
 		return nil
 	}

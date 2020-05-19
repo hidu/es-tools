@@ -3,19 +3,21 @@ package internal
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/hidu/go-speed"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	//	"reflect"
+	// "reflect"
 	"strconv"
 	"strings"
+
+	"github.com/hidu/go-speed"
 )
 
-type Version struct {
-	EsResp
+// ResponseVersion 集群信息
+type ResponseVersion struct {
+	ResponseBase
 	Name        string                 `json:"name"`
 	ClusterName string                 `json:"cluster_name"`
 	ClusterUUID string                 `json:"cluster_uuid"`
@@ -23,55 +25,67 @@ type Version struct {
 	Tagline     string                 `json:"tagline"`
 }
 
-func (vs *Version) Gt(version string) bool {
+// Gt 比较版本大小
+func (vs *ResponseVersion) Gt(version string) bool {
 	number, has := vs.VersionData["number"].(string)
 	if !has {
 		return false
 	}
-	number_arr := strings.Split(number, ".")
-	version_arr := strings.Split(version, ".")
+	numberArr := strings.Split(number, ".")
+	versionArr := strings.Split(version, ".")
 
-	for i, vs := range version_arr {
-		vs_i, err_0 := strconv.ParseInt(vs, 10, 64)
-		if err_0 != nil {
+	for i, vs := range versionArr {
+		vsI, err0 := strconv.ParseInt(vs, 10, 64)
+		if err0 != nil {
 			return false
 		}
 
-		if len(number_arr) < i {
+		if len(numberArr) < i {
 			return false
 		}
-		num_i, err_1 := strconv.ParseInt(number_arr[i], 10, 64)
-		if err_1 != nil {
+		numI, err1 := strconv.ParseInt(numberArr[i], 10, 64)
+		if err1 != nil {
 			return false
 		}
 
-		if vs_i != num_i {
-			return num_i > vs_i
+		if vsI != numI {
+			return numI > vsI
 		}
 	}
 	return false
 }
 
-func (vs *Version) String() string {
+func (vs *ResponseVersion) String() string {
 	s, _ := jsonEncode(vs)
 	return s
 }
 
+// Host es的host配置信息
 type Host struct {
-	AddressUrl string            `json:"addr"`
-	Header     map[string]string `json:"header"`
-	User       string            `json:"user"`
-	Password   string            `json:"password"`
-	client     *http.Client      `json:"-"`
-	speed      *speed.Speed      `json:"-"`
-	Vs         *Version          `json:"-"`
+	// Address 主机host信息，eg：http://127.0.0.1:8080
+	Address string `json:"addr"`
+
+	// Header http header
+	Header map[string]string `json:"header"`
+
+	// User basic 认证的用户名
+	User string `json:"user"`
+
+	// Password basic 认证的密码
+	Password string `json:"password"`
+
+	client *http.Client
+	speed  *speed.Speed
+
+	Vs *ResponseVersion `json:"-"`
 }
 
+// Init 初始化
 func (h *Host) Init() error {
 	if h.speed != nil {
 		return nil
 	}
-	u, err := url.Parse(h.AddressUrl)
+	u, err := url.Parse(h.Address)
 	if err != nil {
 		return err
 	}
@@ -88,12 +102,18 @@ func (h *Host) Init() error {
 		h.Header["Authorization"] = fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(ps)))
 	}
 
+	if _, has := h.Header["User-Agent"]; !has {
+		h.Header["User-Agent"] = "hidu_es-tools"
+	}
+
+	log.Println("Header:", h.Header)
+
 	if h.client == nil {
 		h.client = &http.Client{}
 	}
 	h.speed = speed.NewSpeed("es", 5, nil)
 
-	h.Vs = &Version{}
+	h.Vs = &ResponseVersion{}
 	err = h.DoRequest("GET", "/", "", &h.Vs)
 
 	if err != nil {
@@ -107,11 +127,12 @@ func (h *Host) Init() error {
 	return err
 }
 
-func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, result EsResult) error {
+// DoRequestStream 发送并获取解析结果
+func (h *Host) DoRequestStream(method string, uri string, payload io.Reader, result EsResult) error {
 	h.Init()
 
-	urlStr := fmt.Sprintf("%s%s", h.AddressUrl, uri)
-	req, err := http.NewRequest(method, urlStr, playload)
+	urlStr := fmt.Sprintf("%s%s", h.Address, uri)
+	req, err := http.NewRequest(method, urlStr, payload)
 	if err != nil {
 		return err
 	}
@@ -121,6 +142,11 @@ func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, re
 			req.Header.Set(k, v)
 		}
 	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// bf,_:=httputil.DumpRequest(req,true)
+	// log.Println("request=",string(bf))
+
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return err
@@ -134,22 +160,25 @@ func (h *Host) DoRequestStream(method string, uri string, playload io.Reader, re
 
 	e := jsonDecode(bd, &result)
 
-	//	if result != nil {
-	//		raw:=reflect.ValueOf(result).Elem()
-	//		fmt.Println(raw.Type())
-	//		f0:=raw.FieldByName("Raw")
-	//		if f0.IsValid(){
-	//			f0.SetString(string(bd))
-	//		}
-	//	}
+	// 	if result != nil {
+	// 		raw:=reflect.ValueOf(result).Elem()
+	// 		fmt.Println(raw.Type())
+	// 		f0:=raw.FieldByName("Raw")
+	// 		if f0.IsValid(){
+	// 			f0.SetString(string(bd))
+	// 		}
+	// 	}
 
 	return e
 }
-func (h *Host) DoRequest(method string, uri string, playload string, result EsResult) error {
-	return h.DoRequestStream(method, uri, strings.NewReader(playload), &result)
+
+// DoRequest 发送请求
+func (h *Host) DoRequest(method string, uri string, payload string, result EsResult) error {
+	return h.DoRequestStream(method, uri, strings.NewReader(payload), result)
 }
 
-func (h *Host) BulkStream(stream io.Reader, result *BulkResult) error {
+// BulkStream 发送bulk请求
+func (h *Host) BulkStream(stream io.Reader, result *BulkResponse) error {
 	err := h.DoRequestStream("POST", "/_bulk", stream, &result)
 	if err == nil {
 		h.speed.Success("bulk_items", len(result.Items))

@@ -21,7 +21,7 @@ type SubProcess struct {
 func NewSubProcess(cmdStr string, id string) (*SubProcess, error) {
 	cmdStr = strings.TrimSpace(cmdStr)
 	if cmdStr == "" {
-		return nil, fmt.Errorf("call NewSubProcess with empty command line,id=", id)
+		return nil, fmt.Errorf("call NewSubProcess with empty command line,id=%s", id)
 	}
 	task := &SubProcess{
 		cmdStr: cmdStr,

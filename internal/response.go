@@ -2,12 +2,41 @@ package internal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
 
-type ScanResult struct {
-	EsResp
+// EsResult es 结果接口定义
+type EsResult interface {
+	// 	IsError()(b bool)
+	// 	Error()(error)
+}
+
+// ResponseBase 所有response的基类
+type ResponseBase struct {
+	ErrorStr string `json:"error"`
+	Raw      string `json:"-"` // 原始的resp
+}
+
+// IsError 是否有错
+func (e *ResponseBase) IsError() bool {
+	return e.ErrorStr != ""
+}
+
+// Error 返回错误
+func (e *ResponseBase) Error() error {
+	return errors.New(e.ErrorStr)
+}
+
+// RawResp 原始的response内容
+func (e *ResponseBase) RawResp() string {
+	return e.Raw
+}
+
+// ScanResponse scan 命令的结果
+type ScanResponse struct {
+	ResponseBase
 	ScrollID string `json:"_scroll_id"`
 	Token    int    `json:"took"`
 	TimedOut bool   `json:"timed_out"`
@@ -16,13 +45,14 @@ type ScanResult struct {
 	}
 }
 
-func (sr *ScanResult) String() string {
+func (sr *ScanResponse) String() string {
 	bf, _ := json.MarshalIndent(sr, " ", "  ")
 	return string(bf)
 }
 
-type ScrollResult struct {
-	EsResp
+// ScrollResponse scroll的返回结果
+type ScrollResponse struct {
+	ResponseBase
 	ScrollID string `json:"_scroll_id"`
 	Token    int    `json:"took"`
 	TimedOut bool   `json:"timed_out"`
@@ -32,21 +62,22 @@ type ScrollResult struct {
 	} `json:"hits"`
 }
 
-func (srt *ScrollResult) HasMore() bool {
-	return srt.Hits != nil && len(srt.Hits.Hits) > 0
+// HasMore 是否有更多
+func (sr *ScrollResponse) HasMore() bool {
+	return sr.Hits != nil && len(sr.Hits.Hits) > 0
 }
 
-func (c *ScrollResult) String() string {
-	bf, _ := json.MarshalIndent(c, " ", "  ")
+func (sr *ScrollResponse) String() string {
+	bf, _ := json.MarshalIndent(sr, " ", "  ")
 	return string(bf)
 }
 
+// NewDataItem 创建一条结果数据
 func NewDataItem(str string) (*DataItem, error) {
 	var item *DataItem
 	dec := json.NewDecoder(strings.NewReader(str))
 	dec.UseNumber()
 	err := dec.Decode(&item)
-	//	err := json.Unmarshal([]byte(str), &item)
 
 	if err != nil {
 		return nil, err
@@ -62,6 +93,7 @@ func NewDataItem(str string) (*DataItem, error) {
 	return item, err
 }
 
+// DataItem es 查询结果的一条数据
 type DataItem struct {
 	Index  string                 `json:"_index"`
 	Type   string                 `json:"_type"`
@@ -69,49 +101,60 @@ type DataItem struct {
 	Source map[string]interface{} `json:"_source"`
 }
 
+// String 序列化
 func (item *DataItem) String() string {
-	header := map[string]interface{}{
-		"index": map[string]string{
-			"_index": item.Index,
-			"_type":  item.Type,
-			"_id":    item.ID,
-		},
-	}
-	hd, _ := json.Marshal(header)
-	bd, _ := json.Marshal(item.Source)
-	return string(hd) + "\n" + string(bd) + "\n"
+	return item.JSONString()
 }
 
-func (item *DataItem) JsonString() string {
-	s, _ := json.Marshal(item)
+// JSONString 序列化为json
+func (item *DataItem) JSONString() string {
+	s, err := json.Marshal(item)
+	if err != nil {
+		return err.Error()
+	}
 	return string(s)
 }
 
+// UniqID 返回数据唯一id
 func (item *DataItem) UniqID() string {
-	return fmt.Sprintf("%s|%s|%s", item.Index, item.Type, item.ID)
+	return strings.Join([]string{
+		item.Index,
+		item.Type,
+		item.ID,
+	}, "|")
 }
 
-type BulkResult struct {
-	EsResp
+// BulkResponse bulk命令的response
+type BulkResponse struct {
+	ResponseBase
 	Took   uint64                       `json:"took"`
 	Errors bool                         `json:"errors"`
 	Items  []map[string]*BulkResultItem `json:"items"`
 }
 
+// BulkResultItem bulk命令的一条数据
 type BulkResultItem struct {
 	Index   string `json:"_index"`
 	Type    string `json:"_type"`
-	Id      string `json:"_id"`
+	ID      string `json:"_id"`
 	Version uint64 `json:"_version"`
 	Status  int    `json:"status"`
 	Error   string `json:"error"`
 }
 
+// UniqID 唯一id
 func (bri *BulkResultItem) UniqID() string {
-	return fmt.Sprintf("%s|%s|%s", bri.Index, bri.Type, bri.Id)
+	return strings.Join([]string{
+		bri.Index,
+		bri.Type,
+		bri.ID,
+	}, "|")
 }
 
-func (bri *BulkResult) JsonString() string {
-	bs, _ := json.Marshal(bri)
+func (bri *BulkResponse) String() string {
+	bs, err := json.Marshal(bri)
+	if err != nil {
+		return err.Error()
+	}
 	return string(bs)
 }

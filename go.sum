@@ -1,0 +1,4 @@
+github.com/hidu/go-speed v0.0.0-20170311142608-d36c8ac046d9 h1:DC7Ih9MswK4RcWuzCf+tKE1d/Rr3XLqSh/soEELWU38=
+github.com/hidu/go-speed v0.0.0-20170311142608-d36c8ac046d9/go.mod h1:m2ooTp2LW9HUsafr4sJhONsaES0oQb55dWrweKvHyt4=
+github.com/hidu/goutils v0.0.0-20161120034026-e7a95585a28a h1:js2LPxY4zM4t+jHi77FYive22LZZH4b8ckSU+SIn8u4=
+github.com/hidu/goutils v0.0.0-20161120034026-e7a95585a28a/go.mod h1:J3BM78CVbMETE0RKqEoXeAJMnZa8V/hyBtzFukx48hs=

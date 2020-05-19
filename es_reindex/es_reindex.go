@@ -1,3 +1,9 @@
+/*
+ * Copyright(C) 2020 github.com/hidu  All Rights Reserved.
+ * Author: hidu (duv123+git@baidu.com)
+ * Date: 2020/5/19
+ */
+
 package main
 
 import (
@@ -5,8 +11,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/hidu/es-tools/internal"
-	"github.com/hidu/goutils/time_util"
 	"io/ioutil"
 	"log"
 	"os"
@@ -15,26 +19,24 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/hidu/goutils/time_util"
+
+	"github.com/hidu/es-tools/internal"
 )
 
-func init() {
-	ua := flag.Usage
-	flag.Usage = func() {
-		ua()
-		fmt.Println("\n site: https://github.com/hidu/es-tools/")
-		fmt.Println(" version:", "20171126 1.1")
-	}
-}
-
+// IndexInfo 待处理的索引信息
 type IndexInfo struct {
 	Host    *internal.Host    `json:"host"`
 	DocType *internal.DocType `json:"type"`
 }
 
-func (i *IndexInfo) IndexUri() string {
-	return fmt.Sprintf("%s%s", i.Host.AddressUrl, i.DocType.Uri())
+// IndexURI 索引的uri
+func (i *IndexInfo) IndexURI() string {
+	return fmt.Sprintf("%s%s", i.Host.Address, i.DocType.URI())
 }
 
+// Config 配置信息
 type Config struct {
 	OriginIndex   *IndexInfo             `json:"origin_index"`
 	NewIndex      *IndexInfo             `json:"new_index"`
@@ -42,43 +44,45 @@ type Config struct {
 	ScanTime      string                 `json:"scan_time"`
 	FieldsDefault map[string]interface{} `json:"fields_default"`
 	DataFixCmd    string                 `json:"data_fix_cmd"`
-	sameIndex     bool                   `json:"-"`
+
+	sameIndex bool
 }
 
+// String 序列化
 func (c *Config) String() string {
 	bf, _ := json.Marshal(c)
 	return string(bf)
 }
 
 type CounterType struct {
-	start      time.Time
-	total      uint64 //scroll 的总数
-	read       uint64 //当前已读总数
-	write_skip uint64
-	write_bulk uint64
-	bulk_c     uint64
+	start     time.Time
+	total     uint64 // scroll 的总数
+	read      uint64 // 当前已读总数
+	writeSkip uint64
+	writeBulk uint64
+	bulkC     uint64
 }
 
 func (c *CounterType) String() string {
-	return fmt.Sprintf("counter[read=%d/%d skip=%d bulk_no=%d bulk_total=%d]", c.read, c.total, c.write_skip, c.bulk_c, c.write_bulk)
+	return fmt.Sprintf("counter[read=%d/%d skip=%d bulk_no=%d bulk_total=%d]", c.read, c.total, c.writeSkip, c.bulkC, c.writeBulk)
 }
-func (c *CounterType) Printlog() {
+func (c *CounterType) PrintLog() {
 	if c.total > 0 {
-		finish_rate := float64(c.read) / float64(c.total)
+		finishRate := float64(c.read) / float64(c.total)
 		used := time.Now().Sub(c.start)
 		need := float64(c.total-c.read) / (float64(c.read) / used.Seconds())
 
-		f_time := time.Now().Add(time.Duration(need) * time.Second)
+		finishTime := time.Now().Add(time.Duration(need) * time.Second)
 
-		log.Printf("%s rate=%.2f%% need=%.1fs finish_time=%s", c, 100*finish_rate, need, f_time.Format("2006-01-02 15:04:05"))
+		log.Printf("%s rate=%.2f%% need=%.1fs finish_time=%s", c, 100*finishRate, need, finishTime.Format("2006-01-02 15:04:05"))
 	} else {
 		log.Println(c)
 	}
 }
 
-var conf_name = flag.String("conf", "es_reindex.json", "reindex config file name")
-var loop_sleep = flag.Int64("loop_sleep", 0, "each loop sleep time")
-var bulk_worker = flag.Int("bulk_worker", 3, "bulk worker num")
+var conf = flag.String("conf", "es_reindex.json", "reindex config file name")
+var loopSleep = flag.Int64("loop_sleep", 0, "each loop sleep time")
+var bulkWorker = flag.Int("bulk_worker", 3, "bulk worker num")
 var isDebug = flag.Bool("debug", false, "debug and print")
 
 var counter = &CounterType{
@@ -87,7 +91,7 @@ var counter = &CounterType{
 
 func main() {
 	flag.Parse()
-	config, err := readConf(*conf_name)
+	config, err := readConf(*conf)
 	if err != nil {
 		fmt.Println("parser config failed:", err)
 		os.Exit(2)
@@ -96,13 +100,13 @@ func main() {
 	reIndex(config)
 }
 
-func readConf(conf_name string) (*Config, error) {
-	bs, err := ioutil.ReadFile(conf_name)
+func readConf(confName string) (*Config, error) {
+	bs, err := ioutil.ReadFile(confName)
 	if err != nil {
 		return nil, err
 	}
 
-	os.Chdir(path.Dir(conf_name))
+	os.Chdir(path.Dir(confName))
 
 	var conf *Config
 	dec := json.NewDecoder(bytes.NewReader(bs))
@@ -155,7 +159,7 @@ func readConf(conf_name string) (*Config, error) {
 		conf.DataFixCmd = ""
 	}
 
-	conf.sameIndex = conf.OriginIndex.IndexUri() == conf.NewIndex.IndexUri()
+	conf.sameIndex = conf.OriginIndex.IndexURI() == conf.NewIndex.IndexURI()
 
 	return conf, nil
 }
@@ -170,13 +174,13 @@ func reIndex(conf *Config) {
 	log.Println("[info] start re_index")
 	scroll := internal.NewScroll(conf.OriginIndex.Host, conf.OriginIndex.DocType, conf.ScanQuery)
 
-	scrollResultChan := make(chan *internal.ScrollResult, *bulk_worker*2)
+	scrollResultChan := make(chan *internal.ScrollResponse, *bulkWorker*2)
 	var wg sync.WaitGroup
 
-	for i := 0; i < *bulk_worker; i++ {
+	for i := 0; i < *bulkWorker; i++ {
 		wg.Add(1)
 		go func(id int) {
-			log.Println("[info] bulk_worker_start id=[%d]", id)
+			log.Printf("[info] bulk_worker_start id=[%d]\n", id)
 
 			var fixer *internal.SubProcess
 			if conf.DataFixCmd != "" {
@@ -192,13 +196,13 @@ func reIndex(conf *Config) {
 			if fixer != nil {
 				fixer.Close()
 			}
-			log.Println("[info] bulk_worker_finish id=[%d]", id)
+			log.Printf("[info] bulk_worker_finish id=[%d]", id)
 		}(i)
 	}
 
-	time_util.SetInterval(counter.Printlog, 5)
+	time_util.SetInterval(counter.PrintLog, 5)
 
-	log.Println("[info] started re_bulk worker,n=", *bulk_worker)
+	log.Println("[info] started re_bulk worker,n=", *bulkWorker)
 
 	for {
 		sr, err := scroll.Next()
@@ -220,10 +224,10 @@ func reIndex(conf *Config) {
 
 	wg.Wait()
 
-	log.Println("[info] bulk_worker all finished,stop re_index", counter.String())
+	log.Println("[info] bulkWorker all finished,stop re_index", counter.String())
 }
 
-func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.SubProcess) {
+func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal.SubProcess) {
 	if *isDebug {
 		fmt.Println("rebulk", scrollResult.String())
 	}
@@ -249,7 +253,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 		}
 
 		if fixer != nil {
-			_itemRawStr := item.JsonString()
+			_itemRawStr := item.JSONString()
 			var _res string
 			var _err error
 			_try := 0
@@ -283,7 +287,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 			}
 
 			if _res == "" {
-				atomic.AddUint64(&counter.write_skip, 1)
+				atomic.AddUint64(&counter.writeSkip, 1)
 				log.Println("[info] skip with empty resp:", item.UniqID())
 				continue
 			}
@@ -294,9 +298,9 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 			datas_map[item.UniqID()] = str
 			datas = append(datas, str)
 
-			atomic.AddUint64(&counter.write_bulk, 1)
+			atomic.AddUint64(&counter.writeBulk, 1)
 		} else {
-			atomic.AddUint64(&counter.write_skip, 1)
+			atomic.AddUint64(&counter.writeSkip, 1)
 		}
 	}
 
@@ -305,12 +309,12 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 		return
 	}
 
-	var brt internal.BulkResult
+	var brt internal.BulkResponse
 
 	err := conf.NewIndex.Host.BulkStream(strings.NewReader(strings.Join(datas, "\n")), &brt)
 	checkErr("parse bulk resp failed:", err)
 
-	//	log.Println("bulk resp:", string(body))
+	// 	log.Println("bulk resp:", string(body))
 
 	if brt.Errors {
 		log.Println("[err] bulk resp has error")
@@ -318,10 +322,10 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResult, fixer *internal.S
 		log.Println("[info] bulk all success")
 	}
 
-	//	t,_:=json.Marshal(br)
-	//	fmt.Println("br",string(t))
+	// 	t,_:=json.Marshal(br)
+	// 	fmt.Println("br",string(t))
 	for _, data := range brt.Items {
-		atomic.AddUint64(&counter.bulk_c, 1)
+		atomic.AddUint64(&counter.bulkC, 1)
 		if item, has := data["index"]; has {
 			_id := item.UniqID()
 			_raw, _ := datas_map[_id]
