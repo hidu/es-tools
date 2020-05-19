@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/hidu/es-tools/internal"
@@ -51,19 +50,17 @@ var conf = flag.String("conf", "es_dump.json", "config file name")
 
 func main() {
 	flag.Parse()
-	log.SetFlags(log.Ltime | log.Ltime)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	conf, err := readConf(*conf)
 	if err != nil {
-		fmt.Println("parser config failed:", err)
-		os.Exit(2)
+		log.Fatalln("parser config failed:", err)
 	}
 
-	scrollResultChan := make(chan *internal.ScrollResponse, 10)
+	scrollResultChan := make(chan *internal.ScrollResponse, 100)
 
 	var wg sync.WaitGroup
 
-	// 	for i := 0; i < *bulk_worker; i++ {
 	wg.Add(1)
 	go func() {
 		for job := range scrollResultChan {
@@ -71,7 +68,6 @@ func main() {
 		}
 		wg.Done()
 	}()
-	// 	}
 
 	scroll := internal.NewScroll(conf.OriginIndex.Host, conf.OriginIndex.DocType, conf.ScanQuery)
 	for {
@@ -80,6 +76,7 @@ func main() {
 
 		scrollResultChan <- sr
 		if !sr.HasMore() {
+			log.Println("scroll finish, no more message")
 			break
 		}
 	}
@@ -111,6 +108,7 @@ func readConf(confName string) (*Config, error) {
 
 	err = conf.OriginIndex.Host.Init()
 	checkErr("parse origin index", err)
+
 	if conf.ScanQuery == nil {
 		conf.ScanQuery = internal.NewQuery()
 	}
@@ -125,6 +123,6 @@ func checkErr(msg string, err error) {
 
 func dumpToFile(conf *Config, scrollResult *internal.ScrollResponse) {
 	for _, item := range scrollResult.Hits.Hits {
-		fmt.Println(item)
+		fmt.Println(item.String())
 	}
 }

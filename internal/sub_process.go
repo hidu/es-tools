@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// SubProcess 独立子进程，用于调用外部程序去处理数据
 type SubProcess struct {
 	cmdStr string
 	id     string
@@ -18,6 +19,7 @@ type SubProcess struct {
 	writer io.WriteCloser
 }
 
+// NewSubProcess 创建一个新的子进程
 func NewSubProcess(cmdStr string, id string) (*SubProcess, error) {
 	cmdStr = strings.TrimSpace(cmdStr)
 	if cmdStr == "" {
@@ -71,18 +73,18 @@ func (task *SubProcess) start() (err error) {
 		return err
 	}
 
-	var erout io.ReadCloser
+	var errorReader io.ReadCloser
 
-	erout, err = cmd.StderrPipe()
+	errorReader, err = cmd.StderrPipe()
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		defer erout.Close()
-		berr := bufio.NewReader(erout)
+		defer errorReader.Close()
+		reader := bufio.NewReader(errorReader)
 		for {
-			l, e := berr.ReadString('\n')
+			l, e := reader.ReadString('\n')
 			task.log("cmd_stderr:", strings.TrimSpace(l), e)
 			if cmd.ProcessState == nil || cmd.ProcessState.Exited() {
 				task.log("subprocess is Exited")
@@ -98,17 +100,18 @@ func (task *SubProcess) start() (err error) {
 	return err
 }
 
-func (task *SubProcess) processExixts() bool {
+func (task *SubProcess) processExists() bool {
 	return task.cmd.ProcessState != nil && !task.cmd.ProcessState.Exited()
 }
 
+// Deal 处理数据
 func (task *SubProcess) Deal(str string) (ret string, err error) {
 	str = strings.Trim(str, "\n")
 write:
 	_, err = io.WriteString(task.writer, str+"\n")
 	if err != nil {
 		task.log("write error:", err)
-		if !task.processExixts() {
+		if !task.processExists() {
 			task.start()
 			goto write
 		}
@@ -117,7 +120,7 @@ write:
 	resp, err := task.reader.ReadString('\n')
 	if err != nil {
 		task.log("read error:", err)
-		if !task.processExixts() {
+		if !task.processExists() {
 			task.start()
 			goto write
 		}
@@ -126,6 +129,7 @@ write:
 	return strings.TrimSpace(resp), nil
 }
 
+// Close 子进程关闭
 func (task *SubProcess) Close() error {
 	return task.writer.Close()
 }

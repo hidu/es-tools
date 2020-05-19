@@ -131,7 +131,7 @@ func (h *Host) Init() error {
 func (h *Host) DoRequestStream(method string, uri string, payload io.Reader, result EsResult) error {
 	h.Init()
 
-	urlStr := fmt.Sprintf("%s%s", h.Address, uri)
+	urlStr := strings.Join([]string{h.Address, uri}, "")
 	req, err := http.NewRequest(method, urlStr, payload)
 	if err != nil {
 		return err
@@ -142,6 +142,7 @@ func (h *Host) DoRequestStream(method string, uri string, payload io.Reader, res
 			req.Header.Set(k, v)
 		}
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	// bf,_:=httputil.DumpRequest(req,true)
@@ -159,16 +160,6 @@ func (h *Host) DoRequestStream(method string, uri string, payload io.Reader, res
 	}
 
 	e := jsonDecode(bd, &result)
-
-	// 	if result != nil {
-	// 		raw:=reflect.ValueOf(result).Elem()
-	// 		fmt.Println(raw.Type())
-	// 		f0:=raw.FieldByName("Raw")
-	// 		if f0.IsValid(){
-	// 			f0.SetString(string(bd))
-	// 		}
-	// 	}
-
 	return e
 }
 

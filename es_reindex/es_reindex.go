@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,6 +55,7 @@ func (c *Config) String() string {
 	return string(bf)
 }
 
+// CounterType 计数器
 type CounterType struct {
 	start     time.Time
 	total     uint64 // scroll 的总数
@@ -66,6 +68,8 @@ type CounterType struct {
 func (c *CounterType) String() string {
 	return fmt.Sprintf("counter[read=%d/%d skip=%d bulk_no=%d bulk_total=%d]", c.read, c.total, c.writeSkip, c.bulkC, c.writeBulk)
 }
+
+// PrintLog 打印输出，会依据处理梳理，估算出大致完成的时间
 func (c *CounterType) PrintLog() {
 	if c.total > 0 {
 		finishRate := float64(c.read) / float64(c.total)
@@ -143,7 +147,7 @@ func readConf(confName string) (*Config, error) {
 	}
 
 	if conf.NewIndex.DocType.Type != "" && conf.OriginIndex.DocType.Type == "" {
-		return nil, fmt.Errorf("when origin_index.type.type is empty,new_index.type.type must empty")
+		return nil, fmt.Errorf("when origin_index.type.type is empty, new_index.type.type must empty")
 	}
 
 	if conf.ScanQuery == nil {
@@ -174,7 +178,7 @@ func reIndex(conf *Config) {
 	log.Println("[info] start re_index")
 	scroll := internal.NewScroll(conf.OriginIndex.Host, conf.OriginIndex.DocType, conf.ScanQuery)
 
-	scrollResultChan := make(chan *internal.ScrollResponse, *bulkWorker*2)
+	scrollResultChan := make(chan *internal.ScrollResponse, *bulkWorker*5)
 	var wg sync.WaitGroup
 
 	for i := 0; i < *bulkWorker; i++ {
@@ -185,8 +189,8 @@ func reIndex(conf *Config) {
 			var fixer *internal.SubProcess
 			if conf.DataFixCmd != "" {
 				var _err error
-				fixer, _err = internal.NewSubProcess(conf.DataFixCmd, fmt.Sprintf("%d", id))
-				checkErr("create SubProcess faild", _err)
+				fixer, _err = internal.NewSubProcess(conf.DataFixCmd, strconv.Itoa(id))
+				checkErr("create SubProcess failed", _err)
 			}
 			for job := range scrollResultChan {
 				reBulk(conf, job, fixer)
@@ -216,6 +220,7 @@ func reIndex(conf *Config) {
 
 		scrollResultChan <- sr
 		if !sr.HasMore() {
+			log.Println("[info] no more message")
 			break
 		}
 	}
@@ -224,18 +229,20 @@ func reIndex(conf *Config) {
 
 	wg.Wait()
 
-	log.Println("[info] bulkWorker all finished,stop re_index", counter.String())
+	log.Println("[info] bulkWorker all finished, stop re_index", counter.String())
 }
 
 func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal.SubProcess) {
 	if *isDebug {
 		fmt.Println("rebulk", scrollResult.String())
 	}
-	var datas []string
-	datas_map := make(map[string]string)
+
+	hitsNum := len(scrollResult.Hits.Hits)
+
+	lines := make([]string, 0, hitsNum)
+	dataMap := make(map[string]string, hitsNum)
 
 	for _, item := range scrollResult.Hits.Hits {
-
 		if conf.NewIndex.DocType.Index != "" {
 			item.Index = conf.NewIndex.DocType.Index
 		}
@@ -295,8 +302,8 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 
 		if !conf.sameIndex || _hasChange {
 			str := item.String()
-			datas_map[item.UniqID()] = str
-			datas = append(datas, str)
+			dataMap[item.UniqID()] = str
+			lines = append(lines, str)
 
 			atomic.AddUint64(&counter.writeBulk, 1)
 		} else {
@@ -304,14 +311,14 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 		}
 	}
 
-	if len(datas) < 1 {
+	if len(lines) < 1 {
 		log.Println("[info] not change,skip reindex")
 		return
 	}
 
 	var brt internal.BulkResponse
 
-	err := conf.NewIndex.Host.BulkStream(strings.NewReader(strings.Join(datas, "\n")), &brt)
+	err := conf.NewIndex.Host.BulkStream(strings.NewReader(strings.Join(lines, "\n")), &brt)
 	checkErr("parse bulk resp failed:", err)
 
 	// 	log.Println("bulk resp:", string(body))
@@ -328,12 +335,11 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 		atomic.AddUint64(&counter.bulkC, 1)
 		if item, has := data["index"]; has {
 			_id := item.UniqID()
-			_raw, _ := datas_map[_id]
+			_raw, _ := dataMap[_id]
 			if item.Error != "" {
 				log.Printf("[err] bulk_err id=%s err=%s input=%s", _id, item.Error, strings.TrimSpace(_raw))
 			} else {
 				log.Printf("[info] bulk_suc id=%s s=%d", _id, item.Status)
-
 			}
 		}
 	}

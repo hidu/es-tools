@@ -13,7 +13,7 @@ func jsonDecode(bs []byte, ret interface{}) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("json decode failed,err=(%s),data=(%s)", err, string(bs))
+	return fmt.Errorf("json decode failed, err=(%s), data=(%s)", err, string(bs))
 }
 
 func jsonEncode(item interface{}) (string, error) {
@@ -21,6 +21,7 @@ func jsonEncode(item interface{}) (string, error) {
 	return string(bf), err
 }
 
+// Clone 将对象clone
 func Clone(src interface{}, dest interface{}) error {
 	s, err := jsonEncode(src)
 	if err != nil {
