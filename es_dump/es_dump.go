@@ -7,12 +7,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"os"
 	"sync"
 
 	"github.com/hidu/es-tools/internal"
@@ -63,8 +66,12 @@ func main() {
 
 	wg.Add(1)
 	go func() {
+		writer := bufio.NewWriter(os.Stdout)
 		for job := range scrollResultChan {
-			dumpToFile(conf, job)
+			dumpToWriter(writer, job)
+		}
+		if err := writer.Flush(); err != nil {
+			log.Printf("writer.Flush() has error: %v", err)
 		}
 		wg.Done()
 	}()
@@ -121,8 +128,9 @@ func checkErr(msg string, err error) {
 	}
 }
 
-func dumpToFile(conf *Config, scrollResult *internal.ScrollResponse) {
+func dumpToWriter(writer io.Writer, scrollResult *internal.ScrollResponse) {
 	for _, item := range scrollResult.Hits.Hits {
-		fmt.Println(item.String())
+		writer.Write(item.JSONBytes())
+		writer.Write([]byte("\n"))
 	}
 }

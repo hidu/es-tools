@@ -260,19 +260,20 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 		}
 
 		if fixer != nil {
-			_itemRawStr := item.JSONString()
+			_itemRawStr := string(item.JSONBytes())
 			var _res string
 			var _err error
-			_try := 0
+			try := 0
 
 			for {
-				_try++
+				try++
 				_res, _err = fixer.Deal(_itemRawStr)
 				if _err != nil {
-					log.Println("[err] fixer_deal with error:", _err, "try_times=", _try, "input=", _itemRawStr)
+					log.Println("[err] fixer_deal with error:", _err, "try_times=", try, "input=", _itemRawStr)
 					time.Sleep(1 * time.Second)
 					continue
 				}
+				// 若处理后，返回空字符串，则这条数据会跳过，不处理
 				if _res == "" {
 					break
 				}
@@ -280,7 +281,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 
 				newItem, _err := internal.NewDataItem(_res)
 				if _err != nil {
-					log.Println("[err] fixer_data with error:", _err, "try_times=", _try, "raw=", _itemRawStr, "new_str=", _res)
+					log.Println("[err] fixer_data with error:", _err, "try_times=", try, "raw=", _itemRawStr, "new_str=", _res)
 					time.Sleep(1 * time.Second)
 					continue
 				}
@@ -301,7 +302,7 @@ func reBulk(conf *Config, scrollResult *internal.ScrollResponse, fixer *internal
 		}
 
 		if !conf.sameIndex || _hasChange {
-			str := item.String()
+			str := item.BulkString()
 			dataMap[item.UniqID()] = str
 			lines = append(lines, str)
 

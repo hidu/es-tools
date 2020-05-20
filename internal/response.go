@@ -83,11 +83,11 @@ func NewDataItem(str string) (*DataItem, error) {
 		return nil, err
 	}
 	if item.Index == "" || item.Type == "" || item.ID == "" {
-		return nil, fmt.Errorf("_index,_type,_id is empty,input=%s", str)
+		return nil, fmt.Errorf("_index, _type, _id is empty, input=%q", str)
 	}
 
 	if item.Source == nil {
-		return nil, fmt.Errorf("_source is empty,input=%s", str)
+		return nil, fmt.Errorf("_source is empty, input=%q", str)
 	}
 
 	return item, err
@@ -103,16 +103,36 @@ type DataItem struct {
 
 // String 序列化
 func (item *DataItem) String() string {
-	return item.JSONString()
+	return string(item.JSONBytes())
+}
+
+// BulkString 输出为用于bulk命令的字符串
+func (item *DataItem) BulkString() string {
+	header := map[string]interface{}{
+		"index": map[string]string{
+			"_index": item.Index,
+			"_type":  item.Type,
+			"_id":    item.ID,
+		},
+	}
+	hd, _ := json.Marshal(header)
+	bd, _ := json.Marshal(item.Source)
+
+	var builder strings.Builder
+	builder.Write(hd)
+	builder.WriteByte('\n')
+	builder.Write(bd)
+	builder.WriteByte('\n')
+	return builder.String()
 }
 
 // JSONString 序列化为json
-func (item *DataItem) JSONString() string {
+func (item *DataItem) JSONBytes() []byte {
 	s, err := json.Marshal(item)
 	if err != nil {
-		return err.Error()
+		return []byte(err.Error())
 	}
-	return string(s)
+	return s
 }
 
 // UniqID 返回数据唯一id
